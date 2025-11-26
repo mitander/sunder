@@ -29,24 +29,6 @@
 //! - Message ordering and sequencing
 //! - Epoch transitions under network faults
 //! - Timeout and retry logic
-//!
-//! # Example
-//!
-//! ```rust,ignore
-//! use sunder_core::transport::Transport;
-//!
-//! async fn handle_connection<T: Transport>(transport: T) -> Result<()> {
-//!     let (mut send, mut recv) = transport.accept().await?;
-//!
-//!     // Read frame header (128 bytes)
-//!     let mut header_buf = [0u8; 128];
-//!     recv.read_exact(&mut header_buf).await?;
-//!
-//!     // Process frame...
-//!
-//!     Ok(())
-//! }
-//! ```
 
 use std::{io, net::SocketAddr};
 
@@ -107,10 +89,6 @@ pub trait Transport: Send + Sync + 'static {
 
     /// Connects to a remote endpoint, returning send/receive streams.
     ///
-    /// # Parameters
-    ///
-    /// - `addr`: Socket address of the remote endpoint
-    ///
     /// # Behavior
     ///
     /// - **Initiates** a connection to the remote address
@@ -128,7 +106,10 @@ pub trait Transport: Send + Sync + 'static {
     /// - The remote endpoint is unreachable
     /// - The handshake fails (TLS, QUIC)
     /// - The connection is refused
-    async fn connect(&self, addr: SocketAddr) -> io::Result<(Self::SendStream, Self::RecvStream)>;
+    async fn connect(
+        &self,
+        remote_endpoint: SocketAddr,
+    ) -> io::Result<(Self::SendStream, Self::RecvStream)>;
 }
 
 /// Extension trait for splitting bidirectional streams.
@@ -136,13 +117,6 @@ pub trait Transport: Send + Sync + 'static {
 /// Some transport implementations (like Turmoil's TCP) use a single
 /// bidirectional stream that needs to be "split" into separate read/write
 /// halves. This trait provides that operation.
-///
-/// # Example
-///
-/// ```rust,ignore
-/// let stream = TcpStream::connect(addr).await?;
-/// let (read_half, write_half) = stream.split();
-/// ```
 pub trait SplittableStream: AsyncRead + AsyncWrite + Unpin + Send + 'static {
     /// Type of the read half after splitting.
     type ReadHalf: AsyncRead + Unpin + Send + 'static;

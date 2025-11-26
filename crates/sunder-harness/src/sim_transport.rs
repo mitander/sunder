@@ -21,24 +21,6 @@ use turmoil::net::{TcpListener, TcpStream};
 /// 1. Quinn doesn't support pluggable time/RNG (would require forking)
 /// 2. Sunder's protocol logic lives *inside* QUIC streams
 /// 3. TCP provides identical stream guarantees for testing protocol correctness
-///
-/// We're testing Sunder's state machine, not QUIC's implementation.
-///
-/// # Usage
-///
-/// ```rust,ignore
-/// use sunder_harness::SimTransport;
-/// use sunder_core::transport::Transport;
-///
-/// // Server
-/// turmoil::Builder::new().build().host("server", || async {
-///     let transport = SimTransport::bind("0.0.0.0:443").await?;
-///     let (mut send, mut recv) = transport.accept().await?;
-///
-///     // Read/write frames...
-///     Ok(())
-/// });
-/// ```
 pub struct SimTransport {
     listener: TcpListener,
 }
@@ -55,30 +37,18 @@ impl SimTransport {
     /// Returns error if:
     /// - The address is already in use
     /// - The address format is invalid
-    ///
-    /// # Example
-    ///
-    /// ```rust,ignore
-    /// let transport = SimTransport::bind("0.0.0.0:443").await?;
-    /// ```
-    pub async fn bind(addr: &str) -> io::Result<Self> {
-        let listener = TcpListener::bind(addr).await?;
+    pub async fn bind(address: &str) -> io::Result<Self> {
+        let listener = TcpListener::bind(address).await?;
         Ok(Self { listener })
     }
 
     /// Connects to a remote address.
     ///
-    /// # Parameters
-    ///
-    /// - `addr`: Remote address (e.g., `"server:443"`)
-    ///
-    /// # Returns
+    /// The caller should use `tokio::io::split()` to separate the stream into
+    /// read and write halves if needed.
     ///
     /// Returns `io::Result<TcpStream>` — on success returns a connected
     /// `TcpStream`.
-    ///
-    /// The caller should use `tokio::io::split()` to separate the stream into
-    /// read and write halves if needed.
     ///
     /// # Errors
     ///
@@ -86,15 +56,8 @@ impl SimTransport {
     /// - The remote host is unreachable
     /// - Connection is refused
     /// - DNS resolution fails
-    ///
-    /// # Example
-    ///
-    /// ```rust,ignore
-    /// let stream = SimTransport::connect_to("server:443").await?;
-    /// let (recv, send) = tokio::io::split(stream);
-    /// ```
-    pub async fn connect_to(addr: &str) -> io::Result<TcpStream> {
-        TcpStream::connect(addr).await
+    pub async fn connect_to(address: &str) -> io::Result<TcpStream> {
+        TcpStream::connect(address).await
     }
 }
 

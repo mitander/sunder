@@ -2,6 +2,7 @@
 
 use std::time::Duration;
 
+use rand::RngCore;
 use sunder_core::env::Environment;
 
 /// Simulation environment using Turmoil's virtual time and seeded RNG.
@@ -18,33 +19,6 @@ use sunder_core::env::Environment;
 ///
 /// `SimEnv` must be used inside a Turmoil simulation context (created by
 /// `turmoil::Builder`). Using it outside will panic.
-///
-/// # Example
-///
-/// ```rust,ignore
-/// use sunder_harness::SimEnv;
-/// use sunder_core::env::Environment;
-/// use std::time::Duration;
-///
-/// let mut sim = turmoil::Builder::new().build();
-///
-/// sim.client("test", async {
-///     let env = SimEnv;
-///
-///     // Virtual time
-///     let start = env.now();
-///     env.sleep(Duration::from_secs(10)).await;
-///     let end = env.now();
-///
-///     // This completes instantly in wall-clock time, but advances
-///     // virtual time by 10 seconds
-///     assert_eq!(end - start, Duration::from_secs(10));
-///
-///     Ok(())
-/// });
-///
-/// sim.run().unwrap();
-/// ```
 ///
 /// # Panics
 ///
@@ -66,9 +40,8 @@ impl Environment for SimEnv {
     }
 
     fn random_bytes(&self, dest: &mut [u8]) {
-        // Use rand with thread_rng
-        // In turmoil context, this will be seeded deterministically
-        use rand::RngCore;
+        // Use rand with thread_rng.
+        // In kurmoil context, this will be seede deterministically
         rand::thread_rng().fill_bytes(dest);
     }
 }

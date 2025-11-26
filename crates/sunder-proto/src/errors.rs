@@ -73,3 +73,9 @@ pub enum ProtocolError {
 
 /// Convenient Result type alias for protocol operations
 pub type Result<T> = std::result::Result<T, ProtocolError>;
+
+impl From<ProtocolError> for std::io::Error {
+    fn from(err: ProtocolError) -> Self {
+        std::io::Error::new(std::io::ErrorKind::InvalidData, err)
+    }
+}
