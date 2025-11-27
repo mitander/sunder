@@ -106,20 +106,6 @@ impl SimTransport {
         let stream = TcpStream::connect(address).await?;
         Ok(SimConnection { stream })
     }
-
-    /// Legacy helper method - prefer using `Transport::connect()` instead.
-    ///
-    /// This method bypasses the Transport trait abstraction and returns a raw
-    /// TcpStream. Use `SimTransport::client()` and `transport.connect()` for
-    /// trait-based code.
-    ///
-    /// # Deprecated
-    ///
-    /// This method will be removed in a future version.
-    #[deprecated(note = "Use SimTransport::client() and Transport::connect() instead")]
-    pub async fn connect_to(address: &str) -> io::Result<TcpStream> {
-        TcpStream::connect(address).await
-    }
 }
 
 #[async_trait]
