@@ -20,6 +20,8 @@
 
 pub mod error;
 pub mod group;
+pub mod provider;
 
 pub use error::MlsError;
-pub use group::{MlsAction, MlsGroup};
+pub use group::{MemberId, MlsAction, MlsGroup, RoomId};
+pub use provider::SunderMlsProvider;

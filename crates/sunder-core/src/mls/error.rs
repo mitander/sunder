@@ -7,6 +7,14 @@ use thiserror::Error;
 /// Errors that can occur during MLS operations.
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 pub enum MlsError {
+    /// Serialization/deserialization error
+    #[error("serialization error: {0}")]
+    Serialization(String),
+
+    /// Unexpected message type
+    #[error("unexpected message type: {0}")]
+    UnexpectedMessage(String),
+
     /// Invalid state transition
     #[error("invalid state: cannot {operation} in epoch {epoch}")]
     InvalidState {

@@ -7,6 +7,7 @@ rust-version.workspace = true
 
 [dependencies]
 sunder-proto = { path = "../sunder-proto" }
+bincode = "1.3"
 
 # Async traits (no runtime dependency)
 async-trait = "0.1"
@@ -17,9 +18,13 @@ tokio = { version = "1", default-features = false, features = ["io-util", "time"
 # Error handling
 thiserror = "2.0"
 
-# MLS (Messaging Layer Security)
-mls-rs = "0.51"
-mls-rs-crypto-rustcrypto = "0.19"
+# MLS (Messaging Layer Security) - OpenMLS for synchronous Sans-IO API
+openmls = "0.7"
+openmls_traits = "0.4"
+openmls_rust_crypto = "0.4"
+openmls_basic_credential = "0.4"
+openmls_memory_storage = "0.4"
+rand = "0.8"
 
 [dev-dependencies]
 # Property-based testing
