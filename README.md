@@ -1,4 +1,4 @@
-# sunder
+# kalandra
 
 A high-assurance messaging protocol combining **End-to-End Encryption** with **Server-Side Moderation**.
 
@@ -6,18 +6,18 @@ Built on [MLS](https://www.rfc-editor.org/rfc/rfc9420.pdf) and [QUIC](https://ww
 
 Prioritizes correctness through **Deterministic Simulation Testing** and a **Sans-IO** architecture.
 
-## Architecture
+## Design
 
 - **Hub-Centric:** Servers enforce total ordering and moderation via MLS External Commits.
-- **Sans-IO:** Protocol logic (`sunder-core`) is pure, synchronous, and decoupled from network/time.
-- **Zero-Copy:** Wire format (`sunder-proto`) designed for O(1) routing.
+- **Sans-IO:** Protocol logic is pure, synchronous, and decoupled from network/time.
+- **Zero-Copy:** Wire format designed for O(1) routing.
 
-## Workspace Structure
+## Workspace
 
-- `crates/sunder-core`: Pure protocol state machines (Connection, MLS).
-- `crates/sunder-proto`: Wire format definitions and serialization.
-- `crates/sunder-harness`: Deterministic simulation runner (using `turmoil`).
-- `crates/sunder-server`: Production server runtime (using `quinn` + `tokio`).
+- `crates/kalandra-core`: Pure protocol state machines (Connection, MLS).
+- `crates/kalandra-proto`: Wire format definitions and serialization.
+- `crates/kalandra-harness`: Deterministic simulation runner (using `turmoil`).
+- `crates/kalandra-server`: Production server runtime (using `quinn` + `tokio`).
 
 ### Documentation
 

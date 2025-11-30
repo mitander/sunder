@@ -40,7 +40,7 @@ allow-print-in-tests = true
 
 # Documentation requirements
 doc-valid-idents = [
-    "Sunder",
+    "Kalandra",
 ]
 
 # Standard library functions that should be avoided
@@ -67,4 +67,3 @@ disallowed-macros = [
     { path = "std::eprintln", reason = "Use tracing instead" },
     { path = "std::dbg", reason = "Use tracing instead" },
 ]
-

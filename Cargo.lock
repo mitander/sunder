@@ -719,6 +719,62 @@ dependencies = [
 ]
 
 [[package]]
+name = "kalandra-core"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "bincode",
+ "hex",
+ "insta",
+ "kalandra-proto",
+ "openmls",
+ "openmls_basic_credential",
+ "openmls_memory_storage",
+ "openmls_rust_crypto",
+ "openmls_traits",
+ "proptest",
+ "rand 0.8.5",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
+name = "kalandra-harness"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "kalandra-core",
+ "kalandra-proto",
+ "rand 0.8.5",
+ "rand_chacha 0.3.1",
+ "tokio",
+ "turmoil",
+]
+
+[[package]]
+name = "kalandra-proto"
+version = "0.1.0"
+dependencies = [
+ "bitflags",
+ "bytes",
+ "ciborium",
+ "hex-literal",
+ "proptest",
+ "serde",
+ "serde_repr",
+ "thiserror",
+ "zerocopy",
+]
+
+[[package]]
+name = "kalandra-workspace"
+version = "0.1.0"
+dependencies = [
+ "cargo-husky",
+]
+
+[[package]]
 name = "libc"
 version = "0.2.177"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1586,62 +1642,6 @@ name = "subtle"
 version = "2.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
-
-[[package]]
-name = "sunder-core"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "bincode",
- "hex",
- "insta",
- "openmls",
- "openmls_basic_credential",
- "openmls_memory_storage",
- "openmls_rust_crypto",
- "openmls_traits",
- "proptest",
- "rand 0.8.5",
- "sunder-proto",
- "thiserror",
- "tokio",
-]
-
-[[package]]
-name = "sunder-harness"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "bytes",
- "rand 0.8.5",
- "rand_chacha 0.3.1",
- "sunder-core",
- "sunder-proto",
- "tokio",
- "turmoil",
-]
-
-[[package]]
-name = "sunder-proto"
-version = "0.1.0"
-dependencies = [
- "bitflags",
- "bytes",
- "ciborium",
- "hex-literal",
- "proptest",
- "serde",
- "serde_repr",
- "thiserror",
- "zerocopy",
-]
-
-[[package]]
-name = "sunder-workspace"
-version = "0.1.0"
-dependencies = [
- "cargo-husky",
-]
 
 [[package]]
 name = "syn"

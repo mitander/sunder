@@ -1,13 +1,13 @@
-# Sunder Architecture Document
+# Kalandra Architecture Document
 
 ## Executive Summary
 
-Sunder is a sovereign messaging protocol that combines cryptographic rigor with operational pragmatism. Unlike Matrix's eventual consistency model or Signal's client-heavy architecture, Sunder employs a "hub-centric design" where servers actively participate in group management through MLS External Commits while maintaining end-to-end encryption guarantees.
+Kalandra is a authorative messaging protocol that combines cryptographic rigor with operational pragmatism. Unlike Matrix's eventual consistency model or Signal's client-heavy architecture, Kalandra employs a "hub-centric design" where servers actively participate in group management through MLS External Commits while maintaining end-to-end encryption guarantees.
 
 The architecture prioritizes:
 
 - **Deterministic behavior** over probabilistic guarantees
-- **Server sovereignty** over pure decentralization
+- **Server authority** over pure decentralization
 - **Cryptographic enforcement** over policy-based security
 - **Forensic compliance** over deniability
 
@@ -15,14 +15,14 @@ The architecture prioritizes:
 
 ## 1. Core Design Philosophy
 
-### 1.1 The Sovereign Hub Model
+### 1.1 The Authorative Hub Model
 
 Traditional E2EE messaging treats servers as passive relays. This creates operational blindspots:
 
 - Malicious clients can DoS groups through proposal spam
 - Banned users retain cryptographic material indefinitely
 - Content moderation requires client cooperation
-- Federation lacks authoritative ordering
+- Federation lacks global linearizability
 
 Solution: Servers are first-class MLS participants through the External Senders extension (RFC 9420 §12.1).
 
@@ -56,7 +56,7 @@ The solution is to separate concerns:
 The planes are cryptographically bound:
 
 ```
-SenderKeySeed = MLS.Export("SunderSenderKeyV1", context, 32)
+SenderKeySeed = MLS.Export("kalandraSenderKeyV1", context, 32)
 ```
 
 This provides:
@@ -293,7 +293,7 @@ This provides:
 
 #### Cryptographic Enforcement
 
-Traditional moderation relies on policy (IP bans, account suspension). Sunder uses cryptography:
+Traditional moderation relies on policy (IP bans, account suspension). Kalandra uses cryptography:
 
 ```rust
 // Server-initiated removal
@@ -347,12 +347,11 @@ Layer 3: User Signature
 └─────────────────────────────────┘
 ```
 
-#### Authoritative Home Server
+#### The Designated Sequencer
 
 To prevent split-brain scenarios without complex consensus:
 
-- Each room has exactly one **Home Server** (defined by the RoomID).
-- The Home Server is the sole Sequencer.
+- Each room has exactly one **Sequencer** (defined by the RoomID).
 - Federation logic is **Hub-and-Spoke**, not Mesh.
 - Authority transfer is a "Stop-the-World" migration event, not a dynamic vote.
 
@@ -549,7 +548,7 @@ fn rebuild_state(log: &[Frame]) -> MLSState {
 
 ## 8. Comparison with Alternatives
 
-| Feature               | Sunder                 | Matrix         | Signal          | WhatsApp        |
+| Feature               | Kalandra               | Matrix         | Signal          | WhatsApp        |
 | --------------------- | ---------------------- | -------------- | --------------- | --------------- |
 | Protocol              | MLS (RFC 9420)         | Megolm         | Signal Protocol | Signal Protocol |
 | Group Size            | 10,000+                | 1,000          | 1,000           | 1,024           |
@@ -576,7 +575,7 @@ PQC deployment:
 
 Integration with DID/Verifiable Credentials:
 
-- Self-sovereign identity
+- Self-authorative identity
 - Cross-platform portability
 - Regulatory compliance
 

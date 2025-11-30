@@ -10,20 +10,20 @@ Establish CI/CD, monorepo structure, deterministic simulation harness.
 
 ```rust
 // Workspace structure
-sunder/
+kalandra/
 ├── Cargo.toml          // Workspace root
 ├── crates/
-│   ├── sunder-proto/   // Wire protocol types
-│   ├── sunder-server/  // Server implementation
+│   ├── kalandra-proto/   // Wire protocol types
+│   ├── kalandra-server/  // Server implementation
 │   ├── client-core/    // Client library
-│   └── sunder-harness/ // Simulation harness
+│   └── kalandra-harness/ // Simulation harness
 └── tests/
     └── simulation/     // Deterministic tests
 ```
 
 ### Implementation Tasks
 
-1. **Wire Protocol Types** [`sunder-proto`]
+1. **Wire Protocol Types** [`kalandra-proto`]
 
 ```rust
 // Core types with zero-copy design
@@ -55,7 +55,7 @@ impl Frame {
 }
 ```
 
-2. **Simulation Harness** [`sunder-harness`]
+2. **Simulation Harness** [`kalandra-harness`]
 
 ```rust
 #[test]
@@ -162,7 +162,7 @@ Sender key derivation and message encryption.
 fn derive_sender_key(epoch_secret: &[u8; 32]) -> SenderKey {
    let mut kdf = Hkdf::<Sha256>::new(None, epoch_secret);
    let mut key = [0u8; 32];
-   kdf.expand(b"SunderSenderV1", &mut key).unwrap();
+   kdf.expand(b"kalandraSenderV1", &mut key).unwrap();
    SenderKey(key)
 }
 ```

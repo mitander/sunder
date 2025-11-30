@@ -1,4 +1,4 @@
-# Sunder Server Implementation Guide
+# Kalandra Server Implementation Guide
 
 ## 1. Server Architecture
 
@@ -785,16 +785,16 @@ impl RoomAuthority {
 /// Metrics collection
 lazy_static! {
     static ref MESSAGES_SENT: IntCounter =
-        register_int_counter!("sunder_messages_sent_total", "Total messages sent").unwrap();
+        register_int_counter!("kalandra_messages_sent_total", "Total messages sent").unwrap();
 
     static ref COMMITS_PROCESSED: Histogram =
-        register_histogram!("sunder_commit_duration_seconds", "Commit processing time").unwrap();
+        register_histogram!("kalandra_commit_duration_seconds", "Commit processing time").unwrap();
 
     static ref ACTIVE_CONNECTIONS: IntGauge =
-        register_int_gauge!("sunder_connections_active", "Active connections").unwrap();
+        register_int_gauge!("kalandra_connections_active", "Active connections").unwrap();
 
     static ref ROOM_MEMBERS: IntGaugeVec =
-        register_int_gauge_vec!("sunder_room_members", "Members per room", &["room"]).unwrap();
+        register_int_gauge_vec!("kalandra_room_members", "Members per room", &["room"]).unwrap();
 }
 
 /// Instrument critical paths
@@ -850,25 +850,25 @@ async fn health_check() -> HealthStatus {
 
 ```ini
 [Unit]
-Description=Sunder Server
+Description=Kalandra Server
 After=network.target
 Wants=network-online.target
 
 [Service]
 Type=notify
-ExecStart=/usr/bin/sunderd --config /etc/sunder/config.toml
+ExecStart=/usr/bin/kalandrad --config /etc/kalandra/config.toml
 ExecReload=/bin/kill -USR1 $MAINPID
 Restart=on-failure
 RestartSec=5s
 
 # Security
-User=sunder
-Group=sunder
+User=kalandra
+Group=kalandra
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
 NoNewPrivileges=true
-ReadWritePaths=/var/lib/sunder
+ReadWritePaths=/var/lib/kalandra
 
 # Resource limits
 LimitNOFILE=65536
@@ -883,7 +883,7 @@ WantedBy=multi-user.target
 ### 8.2 Configuration File
 
 ```toml
-# /etc/sunder/config.toml
+# /etc/kalandra/config.toml
 
 [server]
 bind = "[::]:8443"
@@ -892,11 +892,11 @@ max_connections = 10000
 max_rooms = 5000
 
 [tls]
-cert_path = "/etc/sunder/cert.pem"
-key_path = "/etc/sunder/key.pem"
+cert_path = "/etc/kalandra/cert.pem"
+key_path = "/etc/kalandra/key.pem"
 
 [database]
-path = "/var/lib/sunder/data.redb"
+path = "/var/lib/kalandra/data.redb"
 cache_size_mb = 512
 sync_mode = "normal"  # normal|fast|paranoid
 

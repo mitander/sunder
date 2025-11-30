@@ -1,4 +1,4 @@
-# Sunder Protocol Specification
+# Kalandra Protocol Specification
 
 **Wire Format:** Raw Binary Header (Big Endian) + CBOR Payload
 **Cryptography:** MLS (RFC 9420) + XChaCha20-Poly1305
@@ -8,7 +8,7 @@
 
 ## 1. Protocol Overview
 
-Sunder implements a deterministic, sovereign messaging protocol combining MLS group management with sender-key message encryption. Every operation is cryptographically enforced and forensically auditable.
+Kalandra implements a deterministic, authorative messaging protocol combining MLS group management with sender-key message encryption. Every operation is cryptographically enforced and forensically auditable.
 
 ### 1.0 Wire Format Philosophy
 
@@ -346,7 +346,7 @@ enum Opcode {
 
 ### 3.1 Cipher Suites
 
-Sunder supports two cipher suites for different deployment contexts:
+Kalandra supports two cipher suites for different deployment contexts:
 
 #### Suite 0x0003 (Performance - Default)
 
@@ -404,7 +404,7 @@ fn derive_sender_key(
 
     // Create deterministic context
     let mut context = Vec::with_capacity(16);
-    context.extend_from_slice(b"SunderSenderV1");
+    context.extend_from_slice(b"kalandraSenderV1");
     context.extend_from_slice(&epoch.to_be_bytes());
     context.extend_from_slice(&sender_index.to_be_bytes());
 
@@ -528,7 +528,7 @@ fn encrypt_message(
 
 ### 3.4 MLS Extensions
 
-Sunder defines custom extensions to the MLS KeyPackage (RFC 9420 §12.1).
+Kalandra defines custom extensions to the MLS KeyPackage (RFC 9420 §12.1).
 
 #### Notification Key Extension (ID: 0x000A)
 
