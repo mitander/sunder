@@ -290,6 +290,8 @@ impl Connection {
                             ));
                         };
 
+                        debug_assert_ne!(session_id, 0);
+
                         self.state = ConnectionState::Authenticated;
 
                         let reply = Payload::HelloReply(HelloReply {

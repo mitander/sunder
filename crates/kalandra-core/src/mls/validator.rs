@@ -6,7 +6,7 @@
 
 use kalandra_proto::Frame;
 
-use super::{MlsError, MlsGroupState};
+use super::{MlsError, MlsGroupState, constants::MAX_EPOCH};
 
 /// Result of validating a frame against MLS state
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -46,6 +46,8 @@ impl MlsValidator {
         current_epoch: u64,
         group_state: &MlsGroupState,
     ) -> Result<ValidationResult, MlsError> {
+        debug_assert!(current_epoch < MAX_EPOCH);
+
         // 1. Check epoch matches
         let frame_epoch = frame.header.epoch();
         if frame_epoch != current_epoch {
@@ -54,6 +56,8 @@ impl MlsValidator {
             });
         }
 
+        debug_assert_eq!(frame_epoch, current_epoch);
+
         // 2. Verify sender is member
         let sender_id = frame.header.sender_id();
         if !group_state.is_member(sender_id) {
@@ -61,6 +65,8 @@ impl MlsValidator {
                 reason: format!("sender {} not in group", sender_id),
             });
         }
+
+        debug_assert!(group_state.is_member(sender_id));
 
         // 3. TODO: Verify signature (Phase 2 extension)
         // Currently we trust the client signature. In production, we would:

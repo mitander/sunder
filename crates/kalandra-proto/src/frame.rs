@@ -80,11 +80,9 @@ impl Frame {
     #[must_use]
     pub fn new(mut header: FrameHeader, payload: impl Into<Bytes>) -> Self {
         let payload = payload.into();
+        header.payload_size = (payload.len() as u32).to_be_bytes();
 
-        #[allow(clippy::cast_possible_truncation)]
-        {
-            header.payload_size = (payload.len() as u32).to_be_bytes();
-        }
+        debug_assert_eq!(header.payload_size(), payload.len() as u32);
 
         Self { header, payload }
     }
@@ -108,6 +106,8 @@ impl Frame {
     ///   no parsing or transformation. There are no opportunities for injection
     ///   or corruption.
     pub fn encode(&self, dst: &mut impl BufMut) -> Result<()> {
+        debug_assert_eq!(self.payload.len(), self.header.payload_size() as usize);
+
         if self.payload.len() > FrameHeader::MAX_PAYLOAD_SIZE as usize {
             return Err(ProtocolError::PayloadTooLarge {
                 size: self.payload.len(),
@@ -147,7 +147,14 @@ impl Frame {
         let header = FrameHeader::from_bytes(bytes)?;
 
         let payload_size = header.payload_size() as usize;
-        let total_size = FrameHeader::SIZE + payload_size;
+        let total_size = FrameHeader::SIZE.checked_add(payload_size).ok_or_else(|| {
+            ProtocolError::PayloadTooLarge {
+                size: payload_size,
+                max: FrameHeader::MAX_PAYLOAD_SIZE as usize,
+            }
+        })?;
+
+        debug_assert!(total_size >= FrameHeader::SIZE);
 
         if bytes.len() < total_size {
             return Err(ProtocolError::FrameTruncated {
@@ -157,6 +164,8 @@ impl Frame {
         }
 
         let payload = Bytes::copy_from_slice(&bytes[FrameHeader::SIZE..total_size]);
+
+        debug_assert_eq!(payload.len(), payload_size);
 
         Ok(Self { header: *header, payload })
     }

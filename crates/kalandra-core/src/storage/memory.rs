@@ -103,8 +103,9 @@ impl Storage for MemoryStorage {
 
         let frames = inner.frames.entry(room_id).or_insert_with(Vec::new);
 
-        // Validate sequential writes (critical invariant)
         let expected_index = frames.len() as u64;
+        debug_assert!(frames.len() < u64::MAX as usize);
+
         if log_index != expected_index {
             return Err(StorageError::Conflict { expected: expected_index, got: log_index });
         }
@@ -114,6 +115,9 @@ impl Storage for MemoryStorage {
         // storage (redb) will avoid this by storing serialized bytes directly.
         // The payload clone is cheap (Arc increment via Bytes) but header is copied.
         frames.push(frame.clone());
+
+        debug_assert_eq!(frames.len() as u64 - 1, log_index);
+        debug_assert_eq!(frames[log_index as usize].header.log_index(), log_index);
 
         Ok(())
     }

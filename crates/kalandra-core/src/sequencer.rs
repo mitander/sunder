@@ -19,13 +19,13 @@
 
 use std::collections::HashMap;
 
-use kalandra_proto::Frame;
+use kalandra_proto::{Frame, FrameHeader};
 use thiserror::Error;
 
 #[cfg(test)]
 use crate::mls::MlsGroupState;
 use crate::{
-    mls::{MlsValidator, ValidationResult},
+    mls::{MAX_EPOCH, MlsValidator, ValidationResult},
     storage::{Storage, StorageError},
 };
 
@@ -112,6 +112,55 @@ pub struct Sequencer {
     rooms: HashMap<u128, RoomSequencer>,
 }
 
+/// Validate frame structure at API boundary (before processing)
+///
+/// Checks:
+/// - Magic number is correct
+/// - Version is supported
+/// - Payload size matches header claim
+/// - Room ID is non-zero
+/// - Epoch is within reasonable bounds
+fn validate_frame_structure(frame: &Frame) -> Result<(), SequencerError> {
+    if frame.header.magic() != FrameHeader::MAGIC {
+        return Err(SequencerError::Validation(format!(
+            "invalid magic: got {:#010x}, expected {:#010x}",
+            frame.header.magic(),
+            FrameHeader::MAGIC
+        )));
+    }
+
+    if frame.header.version() != FrameHeader::VERSION {
+        return Err(SequencerError::Validation(format!(
+            "unsupported version: got {}, expected {}",
+            frame.header.version(),
+            FrameHeader::VERSION
+        )));
+    }
+
+    if frame.payload.len() != frame.header.payload_size() as usize {
+        return Err(SequencerError::Validation(format!(
+            "payload size mismatch: header claims {}, actual {}",
+            frame.header.payload_size(),
+            frame.payload.len()
+        )));
+    }
+
+    if frame.header.room_id() == 0 {
+        return Err(SequencerError::Validation("room_id is zero (uninitialized?)".to_string()));
+    }
+
+    // Check epoch is within reasonable bounds
+    if frame.header.epoch() > MAX_EPOCH {
+        return Err(SequencerError::Validation(format!(
+            "epoch {} exceeds MAX_EPOCH {}",
+            frame.header.epoch(),
+            MAX_EPOCH
+        )));
+    }
+
+    Ok(())
+}
+
 impl Sequencer {
     /// Create a new sequencer (empty state)
     pub fn new() -> Self {
@@ -136,27 +185,54 @@ impl Sequencer {
         storage: &impl Storage,
         _validator: &MlsValidator,
     ) -> Result<Vec<SequencerAction>, SequencerError> {
+        validate_frame_structure(&frame)?;
+
         let room_id = frame.header.room_id();
 
-        // Get or create room sequencer (load from storage if needed)
-        let room = self.rooms.entry(room_id).or_insert_with(|| {
-            // Load from storage if exists
-            let latest_index = storage.latest_log_index(room_id).unwrap_or(None);
-            let mls_state = storage.load_mls_state(room_id).unwrap_or(None);
+        if !self.rooms.contains_key(&room_id) {
+            let latest_index = storage.latest_log_index(room_id).map_err(|e| {
+                tracing::error!(
+                    room_id = %room_id,
+                    error = %e,
+                    "Failed to load latest_log_index during room initialization"
+                );
+                e
+            })?;
 
-            RoomSequencer {
-                next_log_index: latest_index.map(|i| i + 1).unwrap_or(0),
-                current_epoch: mls_state.map(|s| s.epoch).unwrap_or(0),
-            }
-        });
+            let mls_state = storage.load_mls_state(room_id).map_err(|e| {
+                tracing::error!(
+                    room_id = %room_id,
+                    error = %e,
+                    "Failed to load MLS state during room initialization"
+                );
+                e
+            })?;
 
-        // Validate frame
+            let next_log_index = latest_index.map(|i| i + 1).unwrap_or(0);
+
+            debug_assert!(
+                latest_index.map(|i| next_log_index == i + 1).unwrap_or(next_log_index == 0)
+            );
+
+            let current_epoch = mls_state.as_ref().map(|s| s.epoch).unwrap_or(0);
+
+            tracing::debug!(
+                room_id = %room_id,
+                next_log_index,
+                current_epoch,
+                has_mls_state = mls_state.is_some(),
+                "Initialized room state from storage"
+            );
+
+            self.rooms.insert(room_id, RoomSequencer { next_log_index, current_epoch });
+        }
+
+        let room = self.rooms.get_mut(&room_id).expect("room must exist after initialization");
+
         let validation_result = if room.next_log_index == 0 {
-            // No frames in room yet - validate without state
             MlsValidator::validate_frame_no_state(&frame)
                 .map_err(|e| SequencerError::Validation(e.to_string()))?
         } else {
-            // Load MLS state and validate
             let mls_state = storage.load_mls_state(room_id)?.ok_or_else(|| {
                 SequencerError::Validation(format!(
                     "MLS state not found for room {} (expected state for log index {})",
@@ -168,7 +244,6 @@ impl Sequencer {
                 .map_err(|e| SequencerError::Validation(e.to_string()))?
         };
 
-        // Check validation result
         match validation_result {
             ValidationResult::Reject { reason } => {
                 return Ok(vec![SequencerAction::RejectFrame {
@@ -180,11 +255,20 @@ impl Sequencer {
             ValidationResult::Accept => {},
         }
 
-        // Assign log index (immutable transformation)
         let log_index = room.next_log_index;
-        room.next_log_index += 1;
+
+        room.next_log_index = room.next_log_index.checked_add(1).ok_or_else(|| {
+            SequencerError::Validation(format!(
+                "log_index overflow for room {}: attempted to increment beyond u64::MAX",
+                room_id
+            ))
+        })?;
+
+        debug_assert!(room.next_log_index > log_index);
 
         let sequenced_frame = rebuild_frame_with_index(frame, log_index)?;
+
+        debug_assert_eq!(sequenced_frame.header.log_index(), log_index);
 
         // Return actions (driver executes them)
         // Note: Frame clones are cheap - payload is Arc-based (Bytes), only header is

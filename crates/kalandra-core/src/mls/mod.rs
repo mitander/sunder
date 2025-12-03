@@ -10,6 +10,7 @@
 //! - **`state`**: MLS group state for storage and validation
 //! - **`provider`**: OpenMLS provider integration
 //! - **`error`**: MLS-specific error types
+//! - **`constants`**: Protocol constants and limits
 //!
 //! # Design Principles
 //!
@@ -18,6 +19,7 @@
 //! 3. **Server authority**: Server can moderate via External Commits
 //! 4. **Action pattern**: Methods return `Result<Vec<MlsAction>, MlsError>`
 
+pub mod constants;
 pub mod error;
 pub mod group;
 pub mod provider;
@@ -25,6 +27,7 @@ pub mod state;
 /// Frame validation for server sequencing
 pub mod validator;
 
+pub use constants::MAX_EPOCH;
 pub use error::MlsError;
 pub use group::{MemberId, MlsAction, MlsGroup, RoomId};
 pub use provider::MlsProvider;
