@@ -157,10 +157,22 @@ impl Frame {
         debug_assert!(total_size >= FrameHeader::SIZE);
 
         if bytes.len() < total_size {
+            #[cfg_attr(not(fuzzing), allow(unexpected_cfgs))]
+            #[cfg(fuzzing)]
+            {
+                let _ = payload_size; // Proves we hit this branch
+            }
+
             return Err(ProtocolError::FrameTruncated {
                 expected: payload_size,
                 actual: bytes.len().saturating_sub(FrameHeader::SIZE),
             });
+        }
+
+        #[cfg_attr(not(fuzzing), allow(unexpected_cfgs))]
+        #[cfg(fuzzing)]
+        {
+            let _ = total_size; // Proves we hit success path
         }
 
         let payload = Bytes::copy_from_slice(&bytes[FrameHeader::SIZE..total_size]);

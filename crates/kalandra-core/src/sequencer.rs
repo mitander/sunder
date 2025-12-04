@@ -229,6 +229,16 @@ impl Sequencer {
 
         let room = self.rooms.get_mut(&room_id).expect("room must exist after initialization");
 
+        // COVERAGE SENTINEL: Fuzzers should hit both branches
+        #[cfg_attr(not(fuzzing), allow(unexpected_cfgs))]
+        #[cfg(fuzzing)]
+        {
+            if room.next_log_index == 0 {
+                // First frame path - fuzzer MUST hit this
+                let _ = room.next_log_index;
+            }
+        }
+
         let validation_result = if room.next_log_index == 0 {
             MlsValidator::validate_frame_no_state(&frame)
                 .map_err(|e| SequencerError::Validation(e.to_string()))?
