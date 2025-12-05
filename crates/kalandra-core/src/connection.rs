@@ -124,7 +124,11 @@ pub struct Connection {
 
 impl Connection {
     /// Create a new connection in [`ConnectionState::Init`] state
-    pub fn new(now: Instant, config: ConnectionConfig) -> Self {
+    pub fn new<E: crate::env::Environment<Instant = Instant>>(
+        _env: &E,
+        now: E::Instant,
+        config: ConnectionConfig,
+    ) -> Self {
         Self {
             state: ConnectionState::Init,
             config,
@@ -384,11 +388,39 @@ impl Connection {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::env::Environment;
+
+    // Minimal test environment
+    #[derive(Clone)]
+    struct TestEnv;
+
+    impl crate::env::Environment for TestEnv {
+        type Instant = Instant;
+
+        fn now(&self) -> Self::Instant {
+            Instant::now()
+        }
+
+        fn sleep(
+            &self,
+            _duration: std::time::Duration,
+        ) -> impl std::future::Future<Output = ()> + Send {
+            async {}
+        }
+
+        fn random_bytes(&self, buffer: &mut [u8]) {
+            // Deterministic for tests
+            for (i, byte) in buffer.iter_mut().enumerate() {
+                *byte = i as u8;
+            }
+        }
+    }
 
     #[test]
     fn connection_lifecycle() {
-        let t0 = Instant::now();
-        let mut conn = Connection::new(t0, ConnectionConfig::default());
+        let env = TestEnv;
+        let t0 = env.now();
+        let mut conn = Connection::new(&env, t0, ConnectionConfig::default());
 
         // Initial state
         assert_eq!(conn.state(), ConnectionState::Init);
@@ -419,8 +451,9 @@ mod tests {
 
     #[test]
     fn handle_ping_responds_with_pong() {
-        let t0 = Instant::now();
-        let mut conn = Connection::new(t0, ConnectionConfig::default());
+        let env = TestEnv;
+        let t0 = env.now();
+        let mut conn = Connection::new(&env, t0, ConnectionConfig::default());
 
         // Move to authenticated
         conn.send_hello(t0).unwrap();
@@ -451,8 +484,9 @@ mod tests {
 
     #[test]
     fn handle_pong_updates_activity() {
-        let t0 = Instant::now();
-        let mut conn = Connection::new(t0, ConnectionConfig::default());
+        let env = TestEnv;
+        let t0 = env.now();
+        let mut conn = Connection::new(&env, t0, ConnectionConfig::default());
 
         // Move to authenticated
         conn.send_hello(t0).unwrap();
@@ -480,8 +514,9 @@ mod tests {
 
     #[test]
     fn handle_ping_before_authenticated() {
-        let t0 = Instant::now();
-        let mut conn = Connection::new(t0, ConnectionConfig::default());
+        let env = TestEnv;
+        let t0 = env.now();
+        let mut conn = Connection::new(&env, t0, ConnectionConfig::default());
 
         // Create a Ping frame
         let ping_header = FrameHeader::new(kalandra_proto::Opcode::Ping);
@@ -494,8 +529,9 @@ mod tests {
 
     #[test]
     fn server_handle_hello() {
-        let t0 = Instant::now();
-        let mut conn = Connection::new(t0, ConnectionConfig::default());
+        let env = TestEnv;
+        let t0 = env.now();
+        let mut conn = Connection::new(&env, t0, ConnectionConfig::default());
 
         // Server sets session ID
         conn.set_session_id(0x1234_5678_9ABC_DEF0);
@@ -529,8 +565,9 @@ mod tests {
 
     #[test]
     fn server_hello_without_session_id() {
-        let t0 = Instant::now();
-        let mut conn = Connection::new(t0, ConnectionConfig::default());
+        let env = TestEnv;
+        let t0 = env.now();
+        let mut conn = Connection::new(&env, t0, ConnectionConfig::default());
 
         // Don't set session ID - should fail
 
@@ -543,8 +580,9 @@ mod tests {
 
     #[test]
     fn server_hello_unsupported_version() {
-        let t0 = Instant::now();
-        let mut conn = Connection::new(t0, ConnectionConfig::default());
+        let env = TestEnv;
+        let t0 = env.now();
+        let mut conn = Connection::new(&env, t0, ConnectionConfig::default());
         conn.set_session_id(12345);
 
         let hello = Payload::Hello(Hello {
@@ -560,8 +598,9 @@ mod tests {
 
     #[test]
     fn handle_goodbye_authenticated() {
-        let t0 = Instant::now();
-        let mut conn = Connection::new(t0, ConnectionConfig::default());
+        let env = TestEnv;
+        let t0 = env.now();
+        let mut conn = Connection::new(&env, t0, ConnectionConfig::default());
 
         // Move to authenticated
         conn.send_hello(t0).unwrap();
@@ -588,8 +627,9 @@ mod tests {
 
     #[test]
     fn handle_goodbye_pending() {
-        let t0 = Instant::now();
-        let mut conn = Connection::new(t0, ConnectionConfig::default());
+        let env = TestEnv;
+        let t0 = env.now();
+        let mut conn = Connection::new(&env, t0, ConnectionConfig::default());
 
         // Move to pending
         conn.send_hello(t0).unwrap();
@@ -605,8 +645,9 @@ mod tests {
 
     #[test]
     fn handle_error_frame() {
-        let t0 = Instant::now();
-        let mut conn = Connection::new(t0, ConnectionConfig::default());
+        let env = TestEnv;
+        let t0 = env.now();
+        let mut conn = Connection::new(&env, t0, ConnectionConfig::default());
 
         // Move to authenticated
         conn.send_hello(t0).unwrap();
