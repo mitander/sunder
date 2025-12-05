@@ -1,6 +1,8 @@
 //! Optimality oracle tests
 //!
 //! These tests verify EFFICIENCY, not just correctness.
+use std::time::Duration;
+
 use kalandra_core::connection::ConnectionState;
 use kalandra_harness::scenario::Scenario;
 

@@ -183,6 +183,65 @@ impl Connection {
         Ok(vec![ConnectionAction::SendFrame(frame)])
     }
 
+    /// Server: handle incoming Hello frame
+    ///
+    /// Generates a session ID using the Environment's RNG and returns a
+    /// HelloReply.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if:
+    /// - Not in Init state
+    /// - Version is unsupported
+    /// - Frame is not a valid Hello payload
+    pub fn handle_hello<E: crate::env::Environment<Instant = Instant>>(
+        &mut self,
+        env: &E,
+        frame: &Frame,
+        now: Instant,
+    ) -> Result<Vec<ConnectionAction>, ConnectionError> {
+        if self.state != ConnectionState::Init {
+            return Err(ConnectionError::InvalidState {
+                state: self.state,
+                operation: "handle_hello".to_string(),
+            });
+        }
+
+        let payload = Payload::from_frame(frame.clone())?;
+
+        match payload {
+            Payload::Hello(hello) => {
+                if hello.version != 1 {
+                    return Err(ConnectionError::UnsupportedVersion(hello.version));
+                }
+
+                // Generate session ID from Environment
+                let session_id = env.random_u64();
+                debug_assert_ne!(session_id, 0);
+
+                // Update connection state
+                self.session_id = Some(session_id);
+                self.state = ConnectionState::Authenticated;
+                self.last_activity = now;
+
+                // Create HelloReply
+                let reply = Payload::HelloReply(HelloReply {
+                    session_id,
+                    capabilities: vec![],
+                    challenge: None,
+                });
+
+                let frame = reply.into_frame(FrameHeader::new(Opcode::HelloReply))?;
+
+                Ok(vec![ConnectionAction::SendFrame(frame)])
+            },
+            _ => Err(ConnectionError::InvalidPayload {
+                expected: "Hello",
+                opcode: Opcode::Hello.to_u16(),
+            }),
+        }
+    }
+
     /// Transition to Closed state
     pub fn close(&mut self) {
         self.state = ConnectionState::Closed;
@@ -594,6 +653,41 @@ mod tests {
 
         let result = conn.handle_frame(&hello_frame, t0);
         assert!(matches!(result, Err(ConnectionError::UnsupportedVersion(99))));
+    }
+
+    #[test]
+    fn server_generates_session_id_from_environment() {
+        let env = TestEnv;
+        let t0 = env.now();
+        let mut conn = Connection::new(&env, t0, ConnectionConfig::default());
+
+        // Create Hello message
+        let hello = Payload::Hello(Hello { version: 1, capabilities: vec![], auth_token: None });
+        let hello_frame = hello.into_frame(FrameHeader::new(Opcode::Hello)).unwrap();
+
+        // Call handle_hello() - this doesn't exist yet and will fail
+        let actions = conn.handle_hello(&env, &hello_frame, t0).unwrap();
+
+        // Assert actions contain SendFrame with HelloReply
+        assert_eq!(actions.len(), 1);
+        match &actions[0] {
+            ConnectionAction::SendFrame(frame) => {
+                assert_eq!(frame.header.opcode_enum(), Some(Opcode::HelloReply));
+
+                // Verify HelloReply contains session_id
+                let payload = Payload::from_frame(frame.clone()).unwrap();
+                match payload {
+                    Payload::HelloReply(reply) => {
+                        assert_ne!(reply.session_id, 0);
+                    },
+                    _ => panic!("Expected HelloReply payload"),
+                }
+            },
+            _ => panic!("Expected SendFrame action"),
+        }
+
+        // Assert session_id is Some()
+        assert!(conn.session_id().is_some());
     }
 
     #[test]

@@ -390,3 +390,54 @@ fn prop_closed_is_terminal() {
         assert_eq!(conn.state(), ConnectionState::Closed);
     });
 }
+
+/// Property: Session ID generation is deterministic with same Environment
+#[test]
+fn prop_session_id_deterministic_with_same_env() {
+    proptest!(|(config in config_strategy())| {
+        use kalandra_proto::payloads::session::Hello;
+
+        let env = TestEnv; // Deterministic TestEnv
+        let now = env.now();
+
+        // Create two connections with same environment
+        let mut conn1 = Connection::new(&env, now, config.clone());
+        let mut conn2 = Connection::new(&env, now, config);
+
+        // Create Hello frame
+        let hello = Payload::Hello(Hello {
+            version: 1,
+            capabilities: vec![],
+            auth_token: None,
+        });
+        let hello_frame = hello.into_frame(FrameHeader::new(Opcode::Hello)).unwrap();
+
+        // Handle Hello on both connections
+        let actions1 = conn1.handle_hello(&env, &hello_frame, now).unwrap();
+        let actions2 = conn2.handle_hello(&env, &hello_frame, now).unwrap();
+
+        // Both should have same session ID (deterministic RNG)
+        assert_eq!(conn1.session_id(), conn2.session_id());
+        assert!(conn1.session_id().is_some());
+
+        // Actions should be identical
+        assert_eq!(actions1.len(), actions2.len());
+        assert_eq!(actions1.len(), 1);
+
+        // Verify the HelloReply frames contain the same session ID
+        match (&actions1[0], &actions2[0]) {
+            (ConnectionAction::SendFrame(frame1), ConnectionAction::SendFrame(frame2)) => {
+                let payload1 = Payload::from_frame(frame1.clone()).unwrap();
+                let payload2 = Payload::from_frame(frame2.clone()).unwrap();
+
+                match (payload1, payload2) {
+                    (Payload::HelloReply(reply1), Payload::HelloReply(reply2)) => {
+                        assert_eq!(reply1.session_id, reply2.session_id);
+                    },
+                    _ => panic!("Expected HelloReply payloads"),
+                }
+            },
+            _ => panic!("Expected SendFrame actions"),
+        }
+    });
+}
