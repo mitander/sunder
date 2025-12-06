@@ -183,10 +183,7 @@ where
     /// assert!(manager.has_room(room_id));
     /// # Ok::<(), RoomError>(())
     /// ```
-    pub fn create_room(&mut self, room_id: u128, creator: u64, env: &E) -> Result<(), RoomError>
-    where
-        E::Instant: Into<std::time::Instant>,
-    {
+    pub fn create_room(&mut self, room_id: u128, creator: u64, env: &E) -> Result<(), RoomError> {
         // Prevent duplicate rooms
         if self.has_room(room_id) {
             return Err(RoomError::RoomAlreadyExists(room_id));
@@ -195,7 +192,7 @@ where
         // Create MLS group with Environment
         // For server-side room creation, we use room_id as member_id (server is initial
         // member)
-        let now = env.now().into();
+        let now = env.now();
         let (group, _actions) =
             MlsGroup::new(env.clone(), room_id, creator, now).map_err(RoomError::MlsValidation)?;
         self.groups.insert(room_id, group);

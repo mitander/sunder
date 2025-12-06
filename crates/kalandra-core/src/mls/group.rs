@@ -1,7 +1,5 @@
 //! Client-side MLS group state machine.
 
-use std::time::Instant;
-
 use kalandra_proto::Frame;
 use openmls::prelude::*;
 use openmls_basic_credential::SignatureKeyPair;
@@ -90,18 +88,18 @@ pub struct MlsGroup<E: Environment> {
     provider: MlsProvider<E>,
 
     /// Pending commit that we sent (waiting for sequencer acceptance)
-    pending_commit: Option<PendingCommit>,
+    pending_commit: Option<PendingCommit<E::Instant>>,
 }
 
 /// Tracks a commit we sent that's waiting for sequencer acceptance.
 #[derive(Debug, Clone)]
-struct PendingCommit {
+struct PendingCommit<I> {
     /// Epoch this commit will create
     #[allow(dead_code)] // Will be used when we implement commit handling
     target_epoch: u64,
 
     /// When we sent it (for timeout detection)
-    sent_at: Instant,
+    sent_at: I,
 }
 
 impl<E: Environment> MlsGroup<E> {
@@ -121,8 +119,11 @@ impl<E: Environment> MlsGroup<E> {
         env: E,
         room_id: RoomId,
         member_id: MemberId,
-        _now: Instant,
+        now: E::Instant,
     ) -> Result<(Self, Vec<MlsAction>), MlsError> {
+        // `now` is not used yet (pending_commit starts as None), but is correctly typed
+        // for future use when we create commits and track their timestamps
+        let _ = now;
         let provider = MlsProvider::new(env);
         let ciphersuite = Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519;
 
@@ -178,10 +179,13 @@ impl<E: Environment> MlsGroup<E> {
     ///
     /// Returns true if we have a pending commit that's been waiting for at
     /// least the timeout duration (inclusive).
-    pub fn is_commit_timeout(&self, now: Instant, timeout: std::time::Duration) -> bool {
+    pub fn is_commit_timeout(&self, now: E::Instant, timeout: std::time::Duration) -> bool
+    where
+        E::Instant: Copy + Ord + std::ops::Sub<Output = std::time::Duration>,
+    {
         self.pending_commit
             .as_ref()
-            .map(|pending| now.duration_since(pending.sent_at) >= timeout)
+            .map(|pending| now - pending.sent_at >= timeout)
             .unwrap_or(false)
     }
 
