@@ -404,17 +404,16 @@ fn prop_session_id_deterministic_with_same_env() {
         let mut conn1 = Connection::new(&env, now, config.clone());
         let mut conn2 = Connection::new(&env, now, config);
 
-        // Create Hello frame
-        let hello = Payload::Hello(Hello {
+        // Create Hello message
+        let hello = Hello {
             version: 1,
             capabilities: vec![],
             auth_token: None,
-        });
-        let hello_frame = hello.into_frame(FrameHeader::new(Opcode::Hello)).unwrap();
+        };
 
         // Handle Hello on both connections
-        let actions1 = conn1.handle_hello(&env, &hello_frame, now).unwrap();
-        let actions2 = conn2.handle_hello(&env, &hello_frame, now).unwrap();
+        let actions1 = conn1.handle_hello(&hello, &env, now).unwrap();
+        let actions2 = conn2.handle_hello(&hello, &env, now).unwrap();
 
         // Both should have same session ID (deterministic RNG)
         assert_eq!(conn1.session_id(), conn2.session_id());

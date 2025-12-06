@@ -42,7 +42,7 @@
 //! - **Idle timeout**: 60 seconds without any activity
 //! - **Heartbeat interval**: 20 seconds (sends Ping to keep alive)
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use kalandra_proto::{
     Frame, FrameHeader, Opcode, Payload,
@@ -108,23 +108,34 @@ impl Default for ConnectionConfig {
 ///
 /// This is a pure state machine - no I/O, no Environment storage.
 /// Time is passed as parameters to methods that need it.
+///
+/// # Type Parameters
+///
+/// - `I`: Instant type (e.g., `std::time::Instant` or `turmoil::Instant`) Must
+///   satisfy: `Copy + Ord + Send + Sync + Sub<Output = Duration>`
 #[derive(Debug, Clone)]
-pub struct Connection {
+pub struct Connection<I = std::time::Instant>
+where
+    I: Copy + Ord + Send + Sync + std::ops::Sub<Output = Duration>,
+{
     /// Current state
     state: ConnectionState,
     /// Configuration
     config: ConnectionConfig,
     /// Last activity timestamp
-    last_activity: Instant,
+    last_activity: I,
     /// Last heartbeat sent timestamp
-    last_heartbeat: Option<Instant>,
+    last_heartbeat: Option<I>,
     /// Session ID (assigned by server)
     session_id: Option<u64>,
 }
 
-impl Connection {
+impl<I> Connection<I>
+where
+    I: Copy + Ord + Send + Sync + std::ops::Sub<Output = Duration>,
+{
     /// Create a new connection in [`ConnectionState::Init`] state
-    pub fn new<E: crate::env::Environment<Instant = Instant>>(
+    pub fn new<E: crate::env::Environment<Instant = I>>(
         _env: &E,
         now: E::Instant,
         config: ConnectionConfig,
@@ -166,7 +177,7 @@ impl Connection {
     /// # Errors
     ///
     /// Returns `InvalidState` if not in Init state
-    pub fn send_hello(&mut self, now: Instant) -> Result<Vec<ConnectionAction>, ConnectionError> {
+    pub fn send_hello(&mut self, now: I) -> Result<Vec<ConnectionAction>, ConnectionError> {
         if self.state != ConnectionState::Init {
             return Err(ConnectionError::InvalidState {
                 state: self.state,
@@ -183,7 +194,7 @@ impl Connection {
         Ok(vec![ConnectionAction::SendFrame(frame)])
     }
 
-    /// Server: handle incoming Hello frame
+    /// Server: handle incoming Hello message
     ///
     /// Generates a session ID using the Environment's RNG and returns a
     /// HelloReply.
@@ -193,12 +204,11 @@ impl Connection {
     /// Returns error if:
     /// - Not in Init state
     /// - Version is unsupported
-    /// - Frame is not a valid Hello payload
-    pub fn handle_hello<E: crate::env::Environment<Instant = Instant>>(
+    pub fn handle_hello<E: crate::env::Environment<Instant = I>>(
         &mut self,
+        hello: &Hello,
         env: &E,
-        frame: &Frame,
-        now: Instant,
+        now: E::Instant,
     ) -> Result<Vec<ConnectionAction>, ConnectionError> {
         if self.state != ConnectionState::Init {
             return Err(ConnectionError::InvalidState {
@@ -207,39 +217,26 @@ impl Connection {
             });
         }
 
-        let payload = Payload::from_frame(frame.clone())?;
-
-        match payload {
-            Payload::Hello(hello) => {
-                if hello.version != 1 {
-                    return Err(ConnectionError::UnsupportedVersion(hello.version));
-                }
-
-                // Generate session ID from Environment
-                let session_id = env.random_u64();
-                debug_assert_ne!(session_id, 0);
-
-                // Update connection state
-                self.session_id = Some(session_id);
-                self.state = ConnectionState::Authenticated;
-                self.last_activity = now;
-
-                // Create HelloReply
-                let reply = Payload::HelloReply(HelloReply {
-                    session_id,
-                    capabilities: vec![],
-                    challenge: None,
-                });
-
-                let frame = reply.into_frame(FrameHeader::new(Opcode::HelloReply))?;
-
-                Ok(vec![ConnectionAction::SendFrame(frame)])
-            },
-            _ => Err(ConnectionError::InvalidPayload {
-                expected: "Hello",
-                opcode: Opcode::Hello.to_u16(),
-            }),
+        if hello.version != 1 {
+            return Err(ConnectionError::UnsupportedVersion(hello.version));
         }
+
+        // Generate session ID from Environment
+        let session_id = env.random_u64();
+        debug_assert_ne!(session_id, 0);
+
+        // Update connection state
+        self.session_id = Some(session_id);
+        self.state = ConnectionState::Authenticated;
+        self.last_activity = now;
+
+        // Create HelloReply
+        let reply =
+            Payload::HelloReply(HelloReply { session_id, capabilities: vec![], challenge: None });
+
+        let frame = reply.into_frame(FrameHeader::new(Opcode::HelloReply))?;
+
+        Ok(vec![ConnectionAction::SendFrame(frame)])
     }
 
     /// Transition to Closed state
@@ -250,7 +247,7 @@ impl Connection {
     /// Update last activity timestamp
     ///
     /// Call this when receiving any frame from peer.
-    pub fn update_activity(&mut self, now: Instant) {
+    pub fn update_activity(&mut self, now: I) {
         self.last_activity = now;
     }
 
@@ -258,8 +255,8 @@ impl Connection {
     ///
     /// Returns `Some(elapsed)` if timed out, `None` otherwise
     #[must_use]
-    pub fn check_timeout(&self, now: Instant) -> Option<Duration> {
-        let elapsed = now.duration_since(self.last_activity);
+    pub fn check_timeout(&self, now: I) -> Option<Duration> {
+        let elapsed = now - self.last_activity;
 
         let timeout = match self.state {
             ConnectionState::Pending => self.config.handshake_timeout,
@@ -277,7 +274,7 @@ impl Connection {
     /// - Heartbeat sending
     ///
     /// Returns actions to execute
-    pub fn tick(&mut self, now: Instant) -> Vec<ConnectionAction> {
+    pub fn tick(&mut self, now: I) -> Vec<ConnectionAction> {
         let mut actions = Vec::new();
 
         // Check for timeout
@@ -298,7 +295,7 @@ impl Connection {
             let should_send = match self.last_heartbeat {
                 None => true, // Never sent heartbeat
                 Some(last) => {
-                    let elapsed = now.duration_since(last);
+                    let elapsed = now - last;
                     elapsed >= self.config.heartbeat_interval
                 },
             };
@@ -324,7 +321,7 @@ impl Connection {
     pub fn handle_frame(
         &mut self,
         frame: &Frame,
-        now: Instant,
+        now: I,
     ) -> Result<Vec<ConnectionAction>, ConnectionError> {
         self.last_activity = now;
 
@@ -446,6 +443,8 @@ impl Connection {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Instant;
+
     use super::*;
     use crate::env::Environment;
 
@@ -662,11 +661,10 @@ mod tests {
         let mut conn = Connection::new(&env, t0, ConnectionConfig::default());
 
         // Create Hello message
-        let hello = Payload::Hello(Hello { version: 1, capabilities: vec![], auth_token: None });
-        let hello_frame = hello.into_frame(FrameHeader::new(Opcode::Hello)).unwrap();
+        let hello = Hello { version: 1, capabilities: vec![], auth_token: None };
 
-        // Call handle_hello() - this doesn't exist yet and will fail
-        let actions = conn.handle_hello(&env, &hello_frame, t0).unwrap();
+        // Call handle_hello() with Hello struct directly
+        let actions = conn.handle_hello(&hello, &env, t0).unwrap();
 
         // Assert actions contain SendFrame with HelloReply
         assert_eq!(actions.len(), 1);
@@ -688,6 +686,42 @@ mod tests {
 
         // Assert session_id is Some()
         assert!(conn.session_id().is_some());
+    }
+
+    #[test]
+    fn handle_hello_rejects_unsupported_version() {
+        let env = TestEnv;
+        let t0 = env.now();
+        let mut conn = Connection::new(&env, t0, ConnectionConfig::default());
+
+        let hello = Hello { version: 99, capabilities: vec![], auth_token: None };
+
+        let result = conn.handle_hello(&hello, &env, t0);
+        assert!(matches!(result, Err(ConnectionError::UnsupportedVersion(99))));
+    }
+
+    #[test]
+    fn handle_hello_rejects_if_not_init_state() {
+        let env = TestEnv;
+        let t0 = env.now();
+        let mut conn = Connection::new(&env, t0, ConnectionConfig::default());
+
+        // Move to Authenticated state by sending hello and receiving reply
+        conn.send_hello(t0).unwrap();
+        let reply = Payload::HelloReply(HelloReply {
+            session_id: 12345,
+            capabilities: vec![],
+            challenge: None,
+        });
+        let reply_frame = reply.into_frame(FrameHeader::new(Opcode::HelloReply)).unwrap();
+        conn.handle_frame(&reply_frame, t0).unwrap();
+        assert_eq!(conn.state(), ConnectionState::Authenticated);
+
+        // Now try to handle Hello in Authenticated state - should fail
+        let hello = Hello { version: 1, capabilities: vec![], auth_token: None };
+
+        let result = conn.handle_hello(&hello, &env, t0);
+        assert!(matches!(result, Err(ConnectionError::InvalidState { .. })));
     }
 
     #[test]
