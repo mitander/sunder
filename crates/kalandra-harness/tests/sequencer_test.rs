@@ -3,19 +3,21 @@
 //! These tests verify total ordering invariants under various scenarios:
 //! - Single client sequencing
 //! - Concurrent clients
-//! - Epoch boundaries
 //! - Crash recovery
+//!
+//! # Architecture Note
+//!
+//! MLS validation (epoch, membership) is now handled by RoomManager.
+//! Sequencer focuses solely on log index assignment and total ordering.
 //!
 //! # Oracle Pattern
 //!
 //! Each test ends with an Oracle function that verifies global consistency:
 //! - No gaps in log indices
 //! - Monotonic ordering
-//! - Epoch transitions are valid
 
 use bytes::Bytes;
 use kalandra_core::{
-    mls::{MlsGroupState, MlsValidator},
     sequencer::{Sequencer, SequencerAction},
     storage::{MemoryStorage, Storage},
 };
@@ -29,11 +31,6 @@ fn create_test_frame(room_id: u128, sender_id: u64, epoch: u64, payload: &str) -
     header.set_epoch(epoch);
 
     Frame::new(header, Bytes::from(payload.to_string()))
-}
-
-/// Helper: Create MLS state for testing
-fn create_test_state(room_id: u128, epoch: u64, members: Vec<u64>) -> MlsGroupState {
-    MlsGroupState::new(room_id, epoch, [0u8; 32], members, vec![])
 }
 
 /// Oracle: Verify sequential log indices with no gaps
@@ -78,20 +75,15 @@ fn verify_epoch_consistency(storage: &MemoryStorage, room_id: u128, expected_epo
 fn test_single_client_sequencing() {
     let mut sequencer = Sequencer::new();
     let storage = MemoryStorage::new();
-    let validator = MlsValidator;
 
     let room_id = 100;
     let sender_id = 200;
 
-    // Initialize room with MLS state
-    let state = create_test_state(room_id, 0, vec![sender_id]);
-    storage.store_mls_state(room_id, &state).expect("store_mls_state failed");
-
     // Send 5 frames from single client
+    // Note: MLS validation is now done by RoomManager, not Sequencer
     for i in 0..5 {
         let frame = create_test_frame(room_id, sender_id, 0, &format!("msg-{}", i));
-        let actions =
-            sequencer.process_frame(frame, &storage, &validator).expect("process_frame failed");
+        let actions = sequencer.process_frame(frame, &storage).expect("process_frame failed");
 
         // Execute StoreFrame action
         for action in actions {
@@ -112,17 +104,13 @@ fn test_single_client_sequencing() {
 fn test_concurrent_clients() {
     let mut sequencer = Sequencer::new();
     let storage = MemoryStorage::new();
-    let validator = MlsValidator;
 
     let room_id = 100;
     let client_a = 200;
     let client_b = 300;
 
-    // Initialize room with 2 members
-    let state = create_test_state(room_id, 0, vec![client_a, client_b]);
-    storage.store_mls_state(room_id, &state).expect("store_mls_state failed");
-
     // Interleave frames from two clients
+    // Note: MLS validation (membership check) is now done by RoomManager
     let frames = vec![
         (client_a, "a1"),
         (client_b, "b1"),
@@ -134,8 +122,7 @@ fn test_concurrent_clients() {
 
     for (sender, payload) in frames {
         let frame = create_test_frame(room_id, sender, 0, payload);
-        let actions =
-            sequencer.process_frame(frame, &storage, &validator).expect("process_frame failed");
+        let actions = sequencer.process_frame(frame, &storage).expect("process_frame failed");
 
         // Execute StoreFrame action
         for action in actions {
@@ -157,23 +144,23 @@ fn test_concurrent_clients() {
 }
 
 #[test]
-fn test_epoch_boundary() {
+fn test_mixed_epochs_sequencing() {
+    // Note: Epoch validation is now done by RoomManager.
+    // Sequencer accepts frames regardless of epoch and assigns sequential log
+    // indices. This test verifies Sequencer maintains total ordering across
+    // epoch boundaries.
     let mut sequencer = Sequencer::new();
     let storage = MemoryStorage::new();
-    let validator = MlsValidator;
 
     let room_id = 100;
     let sender_id = 200;
 
-    // Start at epoch 0
-    let state = create_test_state(room_id, 0, vec![sender_id]);
-    storage.store_mls_state(room_id, &state).expect("store_mls_state failed");
-
-    // Send 3 frames at epoch 0
-    for i in 0..3 {
-        let frame = create_test_frame(room_id, sender_id, 0, &format!("epoch0-{}", i));
-        let actions =
-            sequencer.process_frame(frame, &storage, &validator).expect("process_frame failed");
+    // Send frames with different epochs (Sequencer doesn't validate epochs)
+    let epochs = [0, 0, 0, 1, 1, 2];
+    for (i, &epoch) in epochs.iter().enumerate() {
+        let frame =
+            create_test_frame(room_id, sender_id, epoch, &format!("msg-{}-epoch{}", i, epoch));
+        let actions = sequencer.process_frame(frame, &storage).expect("process_frame failed");
 
         for action in actions {
             if let SequencerAction::StoreFrame { room_id, log_index, frame } = action {
@@ -182,56 +169,21 @@ fn test_epoch_boundary() {
         }
     }
 
-    // Simulate epoch transition (new commit advances epoch)
-    let new_state = create_test_state(room_id, 1, vec![sender_id]);
-    storage.store_mls_state(room_id, &new_state).expect("store_mls_state failed");
+    // Oracle: Verify sequential indices despite mixed epochs
+    verify_sequential_indices(&storage, room_id, 6);
 
-    // Update sequencer's cached epoch (simulate restart or cache invalidation)
-    // In production, this would happen via commit processing
-    let mut new_sequencer = Sequencer::new(); // Fresh sequencer loads epoch 1 from storage
-
-    // Send frame with old epoch (should be rejected)
-    let old_epoch_frame = create_test_frame(room_id, sender_id, 0, "stale");
-    let actions = new_sequencer
-        .process_frame(old_epoch_frame, &storage, &validator)
-        .expect("process_frame failed");
-
-    // Oracle: Verify rejection
-    assert_eq!(actions.len(), 1);
-    match &actions[0] {
-        SequencerAction::RejectFrame { reason, .. } => {
-            assert!(reason.contains("epoch mismatch"), "got: {}", reason);
-        },
-        _ => panic!("expected RejectFrame, got: {:?}", actions[0]),
-    }
-
-    // Send frame with correct epoch (should be accepted)
-    let new_epoch_frame = create_test_frame(room_id, sender_id, 1, "epoch1-0");
-    let actions = new_sequencer
-        .process_frame(new_epoch_frame, &storage, &validator)
-        .expect("process_frame failed");
-
-    for action in actions {
-        if let SequencerAction::StoreFrame { room_id, log_index, frame } = action {
-            storage.store_frame(room_id, log_index, &frame).expect("store_frame failed");
-        }
-    }
-
-    // Oracle: Verify sequential indices continue (3 from epoch 0, 1 from epoch 1)
-    verify_sequential_indices(&storage, room_id, 4);
+    // Oracle: Verify epochs are preserved in stored frames
+    let frames = storage.load_frames(room_id, 0, 10).expect("load_frames failed");
+    let stored_epochs: Vec<u64> = frames.iter().map(|f| f.header.epoch()).collect();
+    assert_eq!(stored_epochs, vec![0, 0, 0, 1, 1, 2]);
 }
 
 #[test]
 fn test_sequencer_restart() {
     let storage = MemoryStorage::new();
-    let validator = MlsValidator;
 
     let room_id = 100;
     let sender_id = 200;
-
-    // Initialize room
-    let state = create_test_state(room_id, 0, vec![sender_id]);
-    storage.store_mls_state(room_id, &state).expect("store_mls_state failed");
 
     // Sequencer 1: Process 5 frames
     {
@@ -239,8 +191,7 @@ fn test_sequencer_restart() {
 
         for i in 0..5 {
             let frame = create_test_frame(room_id, sender_id, 0, &format!("msg-{}", i));
-            let actions =
-                sequencer.process_frame(frame, &storage, &validator).expect("process_frame failed");
+            let actions = sequencer.process_frame(frame, &storage).expect("process_frame failed");
 
             for action in actions {
                 if let SequencerAction::StoreFrame { room_id, log_index, frame } = action {
@@ -251,13 +202,13 @@ fn test_sequencer_restart() {
     } // Sequencer dropped (simulates crash)
 
     // Sequencer 2: Recover and continue
+    // A new Sequencer loads next_log_index from storage, so ordering continues
     {
         let mut sequencer = Sequencer::new();
 
         for i in 5..10 {
             let frame = create_test_frame(room_id, sender_id, 0, &format!("msg-{}", i));
-            let actions =
-                sequencer.process_frame(frame, &storage, &validator).expect("process_frame failed");
+            let actions = sequencer.process_frame(frame, &storage).expect("process_frame failed");
 
             for action in actions {
                 if let SequencerAction::StoreFrame { room_id, log_index, frame } = action {
@@ -283,20 +234,13 @@ fn test_sequencer_restart() {
 fn test_multiple_rooms_isolation() {
     let mut sequencer = Sequencer::new();
     let storage = MemoryStorage::new();
-    let validator = MlsValidator;
-
-    // Initialize two rooms
-    for room_id in [100, 200] {
-        let state = create_test_state(room_id, 0, vec![300]);
-        storage.store_mls_state(room_id, &state).expect("store_mls_state failed");
-    }
 
     // Send frames to both rooms in interleaved order
+    // Note: Room initialization/membership validation is handled by RoomManager
     for i in 0..10 {
         let room_id = if i % 2 == 0 { 100 } else { 200 };
         let frame = create_test_frame(room_id, 300, 0, &format!("room{}-{}", room_id, i));
-        let actions =
-            sequencer.process_frame(frame, &storage, &validator).expect("process_frame failed");
+        let actions = sequencer.process_frame(frame, &storage).expect("process_frame failed");
 
         for action in actions {
             if let SequencerAction::StoreFrame { room_id, log_index, frame } = action {
@@ -324,69 +268,42 @@ fn test_multiple_rooms_isolation() {
 }
 
 #[test]
-fn test_non_member_rejection_total_ordering_preserved() {
+fn test_sequencer_accepts_all_senders() {
+    // Note: Membership validation is now done by RoomManager.
+    // Sequencer accepts ALL frames and assigns sequential log indices.
+    // This test verifies Sequencer doesn't discriminate based on sender_id.
     let mut sequencer = Sequencer::new();
     let storage = MemoryStorage::new();
-    let validator = MlsValidator;
 
     let room_id = 100;
-    let member = 200;
-    let non_member = 999;
+    let senders = [200, 300, 400, 500, 600];
 
-    // Initialize room with single member
-    let state = create_test_state(room_id, 0, vec![member]);
-    storage.store_mls_state(room_id, &state).expect("store_mls_state failed");
-
-    // Interleave valid and invalid frames
-    let frames = vec![
-        (member, true),      // Accept
-        (non_member, false), // Reject
-        (member, true),      // Accept
-        (non_member, false), // Reject
-        (member, true),      // Accept
-    ];
-
-    let mut accepted_count = 0;
-    let mut rejected_count = 0;
-
-    for (sender, should_accept) in frames {
+    // Send frames from multiple senders
+    for (i, &sender) in senders.iter().enumerate() {
         let frame = create_test_frame(room_id, sender, 0, &format!("sender-{}", sender));
-        let actions =
-            sequencer.process_frame(frame, &storage, &validator).expect("process_frame failed");
+        let actions = sequencer.process_frame(frame, &storage).expect("process_frame failed");
 
+        // All frames should be accepted
         match &actions[0] {
-            SequencerAction::AcceptFrame { .. } => {
-                assert!(should_accept, "frame from {} should be rejected", sender);
-                accepted_count += 1;
+            SequencerAction::AcceptFrame { log_index, .. } => {
+                assert_eq!(*log_index, i as u64, "wrong log_index for sender {}", sender);
+            },
+            other => panic!("expected AcceptFrame, got: {:?}", other),
+        }
 
-                // Execute StoreFrame
-                for action in actions {
-                    if let SequencerAction::StoreFrame { room_id, log_index, frame } = action {
-                        storage
-                            .store_frame(room_id, log_index, &frame)
-                            .expect("store_frame failed");
-                    }
-                }
-            },
-            SequencerAction::RejectFrame { reason, .. } => {
-                assert!(!should_accept, "frame from {} should be accepted", sender);
-                assert!(reason.contains("not in group"), "unexpected reason: {}", reason);
-                rejected_count += 1;
-            },
-            _ => panic!("unexpected action: {:?}", actions[0]),
+        // Execute StoreFrame
+        for action in actions {
+            if let SequencerAction::StoreFrame { room_id, log_index, frame } = action {
+                storage.store_frame(room_id, log_index, &frame).expect("store_frame failed");
+            }
         }
     }
 
-    // Oracle: Verify rejection counts
-    assert_eq!(accepted_count, 3);
-    assert_eq!(rejected_count, 2);
+    // Oracle: All frames stored with sequential indices
+    verify_sequential_indices(&storage, room_id, 5);
 
-    // Oracle: Verify only accepted frames are stored with sequential indices
-    verify_sequential_indices(&storage, room_id, 3);
-
-    // Oracle: Verify all stored frames are from the member
+    // Oracle: Verify all senders are represented
     let frames = storage.load_frames(room_id, 0, 10).expect("load_frames failed");
-    for frame in frames {
-        assert_eq!(frame.header.sender_id(), member, "non-member frame was stored!");
-    }
+    let stored_senders: Vec<u64> = frames.iter().map(|f| f.header.sender_id()).collect();
+    assert_eq!(stored_senders, vec![200, 300, 400, 500, 600]);
 }
