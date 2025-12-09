@@ -23,6 +23,9 @@ rand = "0.8"
 rand_chacha = "0.3"
 
 [dev-dependencies]
+# Client for E2E tests
+kalandra-client = { path = "../kalandra-client" }
+
 # For test assertions
 bytes = "1.9"
 

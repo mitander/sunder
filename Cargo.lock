@@ -772,6 +772,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "bytes",
+ "kalandra-client",
  "kalandra-core",
  "kalandra-proto",
  "proptest",
