@@ -61,9 +61,11 @@ where
     room_metadata: HashMap<u128, RoomMetadata<E::Instant>>,
 }
 
-/// Actions returned by RoomManager for driver to execute
+/// Actions returned by RoomManager for driver to execute.
+///
+/// Generic over `I` (Instant type) to support both real and virtual time.
 #[derive(Debug, Clone)]
-pub enum RoomAction {
+pub enum RoomAction<I> {
     /// Broadcast this frame to all room members
     Broadcast {
         /// Room ID to broadcast to
@@ -72,6 +74,8 @@ pub enum RoomAction {
         frame: Frame,
         /// Whether to exclude the original sender
         exclude_sender: bool,
+        /// When the frame was processed by the server
+        processed_at: I,
     },
 
     /// Persist frame to storage
@@ -82,6 +86,8 @@ pub enum RoomAction {
         log_index: u64,
         /// Frame to persist
         frame: Frame,
+        /// When the frame was processed by the server
+        processed_at: I,
     },
 
     /// Persist updated MLS state
@@ -90,6 +96,8 @@ pub enum RoomAction {
         room_id: u128,
         /// Updated MLS state to persist
         state: MlsGroupState,
+        /// When the state was updated
+        processed_at: I,
     },
 
     /// Reject frame (send error to sender)
@@ -98,6 +106,8 @@ pub enum RoomAction {
         sender_id: u64,
         /// Reason for rejection
         reason: String,
+        /// When the rejection occurred
+        processed_at: I,
     },
 }
 
@@ -208,9 +218,11 @@ where
     pub fn process_frame(
         &mut self,
         frame: Frame,
-        _env: &E,
+        env: &E,
         storage: &impl Storage,
-    ) -> Result<Vec<RoomAction>, RoomError> {
+    ) -> Result<Vec<RoomAction<E::Instant>>, RoomError> {
+        let now = env.now();
+
         // 1. Room must exist (no lazy creation)
         let room_id = frame.header.room_id();
         let group = self.groups.get(&room_id).ok_or(RoomError::RoomNotFound(room_id))?;
@@ -226,20 +238,27 @@ where
         let sequencer_actions = self.sequencer.process_frame(frame, storage)?;
 
         // 4. Convert SequencerAction to RoomAction
-        let mut room_actions: Vec<RoomAction> = sequencer_actions
+        let mut room_actions: Vec<RoomAction<E::Instant>> = sequencer_actions
             .into_iter()
             .map(|action| match action {
                 SequencerAction::AcceptFrame { room_id, log_index, frame } => {
-                    RoomAction::PersistFrame { room_id, log_index, frame }
+                    RoomAction::PersistFrame { room_id, log_index, frame, processed_at: now }
                 },
                 SequencerAction::StoreFrame { room_id, log_index, frame } => {
-                    RoomAction::PersistFrame { room_id, log_index, frame }
+                    RoomAction::PersistFrame { room_id, log_index, frame, processed_at: now }
                 },
-                SequencerAction::BroadcastToRoom { room_id, frame } => {
-                    RoomAction::Broadcast { room_id, frame, exclude_sender: false }
+                SequencerAction::BroadcastToRoom { room_id, frame } => RoomAction::Broadcast {
+                    room_id,
+                    frame,
+                    exclude_sender: false,
+                    processed_at: now,
                 },
                 SequencerAction::RejectFrame { room_id: _, reason, original_frame } => {
-                    RoomAction::Reject { sender_id: original_frame.header.sender_id(), reason }
+                    RoomAction::Reject {
+                        sender_id: original_frame.header.sender_id(),
+                        reason,
+                        processed_at: now,
+                    }
                 },
             })
             .collect();
@@ -258,7 +277,7 @@ where
 
             // Export the updated MLS state for persistence
             let state = group.export_group_state();
-            room_actions.push(RoomAction::PersistMlsState { room_id, state });
+            room_actions.push(RoomAction::PersistMlsState { room_id, state, processed_at: now });
         }
 
         Ok(room_actions)
