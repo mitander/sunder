@@ -200,6 +200,42 @@ where
         Ok(actions)
     }
 
+    /// Remove members from a room by their member IDs.
+    ///
+    /// Creates an MLS commit to remove the specified members.
+    /// The returned actions should be executed by the driver.
+    ///
+    /// # Errors
+    ///
+    /// Returns `RoomError::RoomNotFound` if the room doesn't exist.
+    /// Returns `RoomError::MlsValidation` if any member ID is not found
+    /// or if the caller tries to remove themselves (use `leave_room` instead).
+    pub fn remove_members(
+        &mut self,
+        room_id: u128,
+        member_ids: &[u64],
+    ) -> Result<Vec<crate::mls::MlsAction>, RoomError> {
+        let group = self.groups.get_mut(&room_id).ok_or(RoomError::RoomNotFound(room_id))?;
+        let actions = group.remove_members(member_ids)?;
+        Ok(actions)
+    }
+
+    /// Leave a room voluntarily.
+    ///
+    /// Creates an MLS Remove proposal for self-removal. In MLS, members
+    /// cannot unilaterally remove themselves - another member must commit
+    /// the removal.
+    ///
+    /// # Errors
+    ///
+    /// Returns `RoomError::RoomNotFound` if the room doesn't exist.
+    /// Returns `RoomError::MlsValidation` if proposal creation fails.
+    pub fn leave_room(&mut self, room_id: u128) -> Result<Vec<crate::mls::MlsAction>, RoomError> {
+        let group = self.groups.get_mut(&room_id).ok_or(RoomError::RoomNotFound(room_id))?;
+        let actions = group.leave_group()?;
+        Ok(actions)
+    }
+
     /// Process a frame through MLS validation and sequencing
     ///
     /// This method orchestrates the full frame processing pipeline:
